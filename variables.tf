@@ -10,8 +10,3 @@ variable "cluster_name" {
   default     = "proyectobase-cluster"
 }
 
-variable "ecr_image_url" {
-  description = "URL completa de la imagen en ECR"
-  type        = string
-}
-

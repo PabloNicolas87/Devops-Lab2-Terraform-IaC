@@ -1,63 +1,60 @@
 provider "aws" {
-  region = var.region
+  region = "us-east-2"
+}
+
+# ECR
+resource "aws_ecr_repository" "ecr" {
+  name = "proyectobase"
+  # When true, Terraform will delete the repository even if it still
+  # contains images. This makes `terraform destroy` remove ECR and all images.
+  force_delete = true
 }
 
 # VPC
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-  tags = { Name = "main-vpc" }
+resource "aws_vpc" "vpc" {
+  cidr_block = "10.0.0.0/16"
 }
 
-# Subnets
-resource "aws_subnet" "public_a" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.1.0/24"
-  availability_zone       = "${var.region}a"
-  map_public_ip_on_launch = true
-  tags = { Name = "subnet-public-a" }
+resource "aws_subnet" "subnet_a" {
+  vpc_id            = aws_vpc.vpc.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "us-east-2a"
 }
 
-resource "aws_subnet" "public_b" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.2.0/24"
-  availability_zone       = "${var.region}b"
-  map_public_ip_on_launch = true
-  tags = { Name = "subnet-public-b" }
+resource "aws_subnet" "subnet_b" {
+  vpc_id            = aws_vpc.vpc.id
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "us-east-2b"
 }
 
-# Internet Gateway
 resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.main.id
-  tags   = { Name = "igw-main" }
+  vpc_id = aws_vpc.vpc.id
 }
 
-# Route Table
 resource "aws_route_table" "rt" {
-  vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.vpc.id
+
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.igw.id
   }
-  tags = { Name = "route-table-main" }
 }
 
 resource "aws_route_table_association" "a" {
-  subnet_id      = aws_subnet.public_a.id
+  subnet_id      = aws_subnet.subnet_a.id
   route_table_id = aws_route_table.rt.id
 }
 
 resource "aws_route_table_association" "b" {
-  subnet_id      = aws_subnet.public_b.id
+  subnet_id      = aws_subnet.subnet_b.id
   route_table_id = aws_route_table.rt.id
 }
 
 # Security Group
 resource "aws_security_group" "ecs_sg" {
   name        = "ecs-sg"
-  description = "Allow HTTP inbound traffic"
-  vpc_id      = aws_vpc.main.id
+  description = "Allow HTTP"
+  vpc_id      = aws_vpc.vpc.id
 
   ingress {
     from_port   = 80
@@ -74,122 +71,126 @@ resource "aws_security_group" "ecs_sg" {
   }
 }
 
-# ECS Cluster
-resource "aws_ecs_cluster" "main" {
-  name = var.cluster_name
-}
-
-# IAM Role para ejecución de tareas
-resource "aws_iam_role" "ecs_task_exec_role" {
-  name = "ecsTaskExecutionRole"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "ecs-tasks.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_task_exec_role_policy" {
-  role       = aws_iam_role.ecs_task_exec_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
 # Load Balancer
-resource "aws_lb" "ecs_lb" {
-  name               = "ecs-lb"
+resource "aws_lb" "alb" {
+  name               = "proyectobase-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.ecs_sg.id]
-  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+  subnets            = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
 }
 
-resource "aws_lb_target_group" "ecs_tg" {
-  name     = "tg-ecs"
+resource "aws_lb_target_group" "tg" {
+  # Use a short name_prefix (<= 6 chars) so Terraform can create a replacement
+  # TG with a unique name when `create_before_destroy = true` is set.
+  # "name_prefix" has a length limit; keep it short to satisfy the provider.
+  name_prefix = "pb-tg-"
   port     = 80
   protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
+  # For Fargate (awsvpc) the target type must be "ip". The default is "instance".
+  target_type = "ip"
+  vpc_id   = aws_vpc.vpc.id
 
-  health_check {
-    path                = "/"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    matcher             = "200"
+  # Ensure Terraform creates the new target group before destroying the old one.
+  # This prevents "ResourceInUse: Target group ... is currently in use by a listener or a rule" errors
+  # when the listener must be updated to point to the new target group.
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
-resource "aws_lb_listener" "ecs_listener" {
-  load_balancer_arn = aws_lb.ecs_lb.arn
+resource "aws_lb_listener" "listener" {
+  load_balancer_arn = aws_lb.alb.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.ecs_tg.arn
+    target_group_arn = aws_lb_target_group.tg.arn
   }
 }
 
-# Task Definition (pendiente imagen real)
-resource "aws_ecs_task_definition" "app" {
-  family                   = "proyectobase-task"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
-  execution_role_arn       = aws_iam_role.ecs_task_exec_role.arn
-
-  container_definitions = jsonencode([
-    {
-      name      = "app"
-      image     = var.ecr_image_url
-      essential = true
-      portMappings = [{
-        containerPort = 80
-        hostPort      = 80
-      }],
-      logConfiguration = {
-        logDriver = "awslogs",
-        options = {
-          awslogs-group         = "/ecs/proyectobase"
-          awslogs-region        = var.region
-          awslogs-stream-prefix = "ecs"
-        }
-      }
-    }
-  ])
+# ECS Cluster
+resource "aws_ecs_cluster" "cluster" {
+  name = "proyectobase-cluster"
 }
 
-# Log Group
+# IAM Role
+resource "aws_iam_role" "ecs_task_execution_role" {
+  name = "ecsTaskExecutionRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+      Effect = "Allow"
+      Sid    = ""
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_attach" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# Task Definition
+resource "aws_ecs_task_definition" "task" {
+  family                   = "proyectobase-task"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+
+  container_definitions = jsonencode([{
+    name      = "proyectobase"
+    image     = "nginx:latest"  # Imagen temporal inicial
+    essential = true
+    portMappings = [{
+      containerPort = 80
+      hostPort      = 80
+    }]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = "/ecs/proyectobase"
+        "awslogs-region"        = "us-east-2"
+        "awslogs-stream-prefix" = "proyectobase"
+      }
+    }
+  }])
+}
+
 resource "aws_cloudwatch_log_group" "ecs_logs" {
   name              = "/ecs/proyectobase"
   retention_in_days = 7
 }
 
 # ECS Service
-resource "aws_ecs_service" "app" {
+resource "aws_ecs_service" "service" {
   name            = "proyectobase-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.app.arn
-  launch_type     = "FARGATE"
+  cluster         = aws_ecs_cluster.cluster.id
+  task_definition = aws_ecs_task_definition.task.arn
   desired_count   = 1
+  launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+    subnets         = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
     security_groups = [aws_security_group.ecs_sg.id]
     assign_public_ip = true
   }
 
   load_balancer {
-    target_group_arn = aws_lb_target_group.ecs_tg.arn
-    container_name   = "app"
+    target_group_arn = aws_lb_target_group.tg.arn
+    container_name   = "proyectobase"
     container_port   = 80
   }
 
-  depends_on = [aws_lb_listener.ecs_listener]
+  depends_on = [
+    aws_lb_listener.listener
+  ]
 }
