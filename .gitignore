@@ -1,0 +1,24 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+crash.log
+*.tfvars
+override.tf
+override.tf.json
+terraform.tfstate.d/
+
+# Local config
+.terraform.lock.hcl
+
+# Sensitive files
+*.tfvars
+*.pem
+*.key
+
+# Docker
+*.env
+.env.*
+docker-compose.override.yml
+*.log
+.terraform/
