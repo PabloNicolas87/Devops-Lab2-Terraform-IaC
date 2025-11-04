@@ -1,138 +1,157 @@
-# 🧩 DevOps Lab 2 – ECS / Fargate Orchestration & CI/CD Automation
+# 🧱 DevOps-Lab2 – Infrastructure as Code (IaC) with Terraform
 
-This repository is part of the **DevOps Golden Path**, a modular learning roadmap designed to build real-world cloud and DevOps expertise through progressive, production-grade projects.
-
----
-
-## 🎯 Purpose of the Golden Path
-
-The goal of this series is to evolve a full DevOps ecosystem step-by-step, where each lab represents a new stage in automation, scalability, and reliability:
-
-| Lab | Focus |
-|-----|--------|
-| 1 | Containerization & CI/CD on AWS (EC2) |
-| **2** | **Orchestration on AWS ECS / Fargate (this repo)** |
-| 3 | Serverless Evolution (Lambda + API Gateway + S3) |
-| 4 | Persistence & Databases (RDS / DynamoDB) |
-| 5 | CI/CD Advanced & Observability |
-
-Each lab has its own GitHub repository and Terraform-based IaC project, ensuring reproducible, automated cloud environments.
+This repository contains the **Infrastructure as Code (IaC)** configuration used to deploy on AWS the environment required for the **DevOps-Lab2** project – _ECS / Fargate Orchestration & CI/CD Automation_.  
+The infrastructure is fully managed with **Terraform**, ensuring automated, repeatable, and secure provisioning of scalable cloud resources.
 
 ---
 
-## 🚀 Project Overview
+## 🚀 Deployed Resources
 
-**DevOps Lab 2** extends the previous EC2-based setup and migrates the containerized React application to a fully managed, orchestrated environment using **Amazon ECS on Fargate**.
+This configuration provisions a complete orchestration environment using **Amazon ECS with Fargate**, designed to host containerized front-end applications with high availability.
 
-The project demonstrates how to:
+### Core AWS components:
 
-- Replace manual EC2 deployments with container orchestration.
-- Use an **Application Load Balancer (ALB)** for traffic management.
-- Implement a fully automated CI/CD pipeline with **GitHub Actions**, **Docker Buildx**, and **ECR**.
-- Maintain zero-downtime deployments via service updates.
-
----
-
-## ⚙️ How It Works – CI/CD Pipeline
-
-The workflow `.github/workflows/deploy.yml` automates the build-and-deploy lifecycle:
-
-### **1️⃣ Build Phase**
-- Checks out source code.  
-- Installs dependencies & runs tests.  
-- Builds multi-stage Docker images (`builder` → `runtime`).  
-
-### **2️⃣ Publish Phase**
-- Pushes both images to:
-  - **Docker Hub** (public reference)
-  - **Amazon ECR** (private deployment repo)
-
-### **3️⃣ Deploy Phase**
-- Registers a new ECS Task Definition (Fargate).  
-- Updates the ECS Service linked to an **Application Load Balancer**.  
-- Waits for the service to stabilize → achieving **zero-downtime** deployment.  
-
-Each push to the `main` branch or new semantic version tag (`v1.0.0`, `v1.1.0`, etc.) triggers a full CI/CD cycle automatically.
+- **Amazon ECR (Elastic Container Registry):** Private Docker image registry.  
+- **Amazon ECS (Elastic Container Service):** Container orchestration service used with **Fargate** as the compute engine.  
+- **ECS Task Definition:** Describes the container image, resources, and execution role.  
+- **ECS Service:** Manages desired task count and deployment strategy (rolling updates).  
+- **Application Load Balancer (ALB):** Distributes incoming traffic across Fargate tasks.  
+- **VPC (Virtual Private Cloud):** Includes two public subnets across different Availability Zones for redundancy.  
+- **Security Groups:** Allow inbound HTTP (port 80) and outbound traffic for ECS tasks.  
+- **CloudWatch Log Group:** Stores application logs for monitoring and troubleshooting.  
+- **IAM Role:** Grants ECS tasks permissions to pull images from ECR and send logs to CloudWatch.
 
 ---
 
-## 🏗️ Infrastructure as Code (IaC)
-
-The infrastructure for ECS Fargate is provisioned via Terraform in a separate repository:
-
-🔗 **[Devops-Lab2-Terraform-IaC](https://github.com/PabloNicolas87/Devops-Lab2-Terraform-IaC)**
-
-Terraform defines and manages:
-- **Amazon ECR** (private image registry)  
-- **Amazon VPC**, Subnets & Security Groups  
-- **Application Load Balancer (ALB)** + Target Groups  
-- **ECS Cluster**, Service & Task Definition  
-- **IAM Roles & Policies**  
-- **CloudWatch Log Groups**  
-
-> Each resource is deployed reproducibly using `terraform init`, `terraform apply`, and can be destroyed with `terraform destroy`.
-
----
-
-## 🧩 Architecture Overview
+## 🗺️ Architecture Overview
 
 ```
-┌──────────────────────────────────────┐
-│           GitHub Actions (CI/CD)      │
-│  ──────────────────────────────────  │
-│  • Build & Test                      │
-│  • Push to DockerHub + ECR           │
-│  • Register Task Definition on ECS    │
-│  • Update Service (Fargate)          │
-└────────────────────┬─────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────┐
-│        AWS Infrastructure (Terraform)│
-│  ──────────────────────────────────  │
-│  • Amazon ECR (Container Repo)       │
-│  • Amazon ECS (Fargate Service)      │
-│  • Application Load Balancer (ALB)   │
-│  • CloudWatch Logs / IAM Roles       │
-└──────────────────────────────────────┘
+                     +-----------------------------------+
+                     |           AWS Account             |
+                     |                                   |
+                     |   +---------------------------+   |
+                     |   |       Amazon ECR          |   |
+                     |   |   (Image Registry)        |   |
+                     |   +------------▲--------------+   |
+                     |                |                  |
+                     |     Pull image | via IAM Role     |
+                     |                |                  |
+                     |   +---------------------------+   |
+Internet ⇄ ALB ⇄ TG ⇄ |     ECS Service (Fargate)   | ⇄ CloudWatch Logs
+                     |   |  - lab2-task              |   |
+                     |   |  - lab2-service           |   |
+                     |   +------------▼--------------+   |
+                     |        Amazon VPC + Subnets       |
+                     +-----------------------------------+
 ```
 
 ---
 
-## 📦 Tech Stack
+## 📂 Project Structure
 
-| Category | Tools / Services |
-|-----------|-----------------|
-| Front-end | React + Vite |
-| CI/CD | GitHub Actions + AWS CLI |
-| Containers | Docker / Docker Buildx |
-| Cloud | AWS (ECS Fargate, ECR, ALB, CloudWatch) |
-| IaC | Terraform |
-| Language | TypeScript |
+```
+Devops-Lab2-Terraform-IaC/
+├── main.tf        # Main Terraform configuration (ECR, ECS, ALB, IAM, VPC, CloudWatch)
+├── variables.tf   # Input variables (region, cluster name, etc.)
+├── outputs.tf     # Output values (ECR URL, ECS Cluster, Load Balancer DNS)
+├── .gitignore     # Ignored local state and temporary files
+└── README.md      # Project documentation
+```
+
+---
+
+## ⚙️ Requirements
+
+Before applying this configuration, ensure you have:
+
+- **Terraform** installed → [Terraform Installation Guide](https://developer.hashicorp.com/terraform/downloads)  
+- **AWS CLI** configured with a valid profile that assumes a Terraform role (e.g., `terraform-assumido`).  
+- An **AWS account** with permissions to create and manage:
+  - ECS clusters and task definitions  
+  - Application Load Balancers  
+  - VPCs and networking components  
+  - ECR repositories  
+  - IAM roles and CloudWatch log groups  
+
+---
+
+## 🧭 Usage
+
+### 1. Initialize Terraform
+```bash
+terraform init
+```
+
+### 2. Preview the execution plan
+```bash
+terraform plan
+```
+
+### 3. Apply the configuration (create resources)
+```bash
+terraform apply
+```
+Confirm with `yes` when prompted.
+
+Once applied successfully, Terraform will output:
+- The **ECR repository URL**
+- The **ECS Cluster name**
+- The **Load Balancer DNS name**
+
+
+### 4. Destroy all resources
+```bash
+terraform destroy
+```
+This removes all created resources, avoiding unnecessary AWS costs.
+
+---
+
+## 🎯 Project Goal
+
+This repository is part of the **DevOps Golden Path**, a progressive roadmap to mastering cloud infrastructure and automation.
+
+Here, the focus is on **orchestration and scalability**, moving from EC2-based deployments (Lab1) to a fully managed **ECS Fargate** setup — laying the foundation for serverless and multi-environment deployments in future labs.
+
+---
+
+## 🧩 Technical Notes
+
+- Default AWS Region: **us-east-2 (Ohio)**  
+- Networking: Two public subnets (us-east-2a, us-east-2b) under a custom VPC.  
+- Default Load Balancer: **Application Load Balancer (HTTP/80)**  
+- ECS Launch Type: **Fargate** (serverless container runtime)  
+- IAM Roles:
+  - `lab2-ecsTaskExecutionRole` → grants access to ECR + CloudWatch Logs.  
+- Logging:
+  - Centralized under CloudWatch group `/ecs/lab2`.  
+- Task Definition:
+  - Default image: `nginx:latest` (placeholder, replaced by pipeline during deployment).
+
+---
+
+## 🔗 Integration with CI/CD
+
+This IaC project pairs directly with the **DevOps-Lab2** repository:
+
+- The CI/CD pipeline (`.github/workflows/deploy.yml`) builds and pushes Docker images to ECR.
+- It then registers a new ECS Task Definition and updates the Fargate service.
+- All AWS resources referenced by the pipeline are provisioned here via Terraform.
+
+> Ensure this IaC is deployed before running the CI/CD workflow in **DevOps-Lab2**, as the pipeline depends on the output values (ECR URL, ECS Cluster, Service name, ALB DNS).
 
 ---
 
 ## 🧠 Key Learnings
-- Building multi-stage Docker images and pushing to multiple registries.  
-- Automating zero-downtime deployments via ECS Fargate and ALB.  
-- Using Terraform to define orchestrated infrastructure.  
-- Configuring IAM roles and policies for ECS tasks.  
-- Centralizing environment variables and secrets in GitHub Actions.  
-- Extending a modular DevOps pipeline towards scalable cloud deployments.  
 
----
-
-## 🔜 Next Step
-**Lab 3 – Serverless Evolution**
-
-The next module transitions the architecture from container orchestration to serverless execution, leveraging:
-- **AWS Lambda**
-- **API Gateway**
-- **S3 Static Hosting**
-
-This continues the Golden Path towards fully elastic, cost-efficient cloud applications.
+- Designing cloud infrastructure for container orchestration (ECS + Fargate).  
+- Using Terraform to model and automate multi-component architectures.  
+- Managing IAM roles, networking, and load balancing declaratively.  
+- Implementing modular infrastructure as a foundation for future labs.  
+- Establishing a clean integration between IaC and CI/CD pipelines.
 
 ---
 
 ## 🧾 License
 MIT License © Pablo Nicolás Girone
+
