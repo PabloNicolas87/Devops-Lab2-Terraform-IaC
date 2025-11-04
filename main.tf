@@ -4,9 +4,7 @@ provider "aws" {
 
 # ECR
 resource "aws_ecr_repository" "ecr" {
-  name = "proyectobase"
-  # When true, Terraform will delete the repository even if it still
-  # contains images. This makes `terraform destroy` remove ECR and all images.
+  name         = "lab2"
   force_delete = true
 }
 
@@ -52,7 +50,7 @@ resource "aws_route_table_association" "b" {
 
 # Security Group
 resource "aws_security_group" "ecs_sg" {
-  name        = "ecs-sg"
+  name        = "lab2-sg"
   description = "Allow HTTP"
   vpc_id      = aws_vpc.vpc.id
 
@@ -73,7 +71,7 @@ resource "aws_security_group" "ecs_sg" {
 
 # Load Balancer
 resource "aws_lb" "alb" {
-  name               = "proyectobase-alb"
+  name               = "lab2-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.ecs_sg.id]
@@ -81,19 +79,12 @@ resource "aws_lb" "alb" {
 }
 
 resource "aws_lb_target_group" "tg" {
-  # Use a short name_prefix (<= 6 chars) so Terraform can create a replacement
-  # TG with a unique name when `create_before_destroy = true` is set.
-  # "name_prefix" has a length limit; keep it short to satisfy the provider.
-  name_prefix = "pb-tg-"
-  port     = 80
-  protocol = "HTTP"
-  # For Fargate (awsvpc) the target type must be "ip". The default is "instance".
+  name_prefix = "lab2-"
+  port        = 80
+  protocol    = "HTTP"
   target_type = "ip"
-  vpc_id   = aws_vpc.vpc.id
+  vpc_id      = aws_vpc.vpc.id
 
-  # Ensure Terraform creates the new target group before destroying the old one.
-  # This prevents "ResourceInUse: Target group ... is currently in use by a listener or a rule" errors
-  # when the listener must be updated to point to the new target group.
   lifecycle {
     create_before_destroy = true
   }
@@ -112,12 +103,12 @@ resource "aws_lb_listener" "listener" {
 
 # ECS Cluster
 resource "aws_ecs_cluster" "cluster" {
-  name = "proyectobase-cluster"
+  name = "lab2-cluster"
 }
 
 # IAM Role
 resource "aws_iam_role" "ecs_task_execution_role" {
-  name = "ecsTaskExecutionRole"
+  name = "lab2-ecsTaskExecutionRole"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -137,9 +128,15 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_attach" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Task Definition
+# CloudWatch Logs
+resource "aws_cloudwatch_log_group" "ecs_logs" {
+  name              = "/ecs/lab2"
+  retention_in_days = 7
+}
+
+# ECS Task Definition
 resource "aws_ecs_task_definition" "task" {
-  family                   = "proyectobase-task"
+  family                   = "lab2-task"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "256"
@@ -147,8 +144,8 @@ resource "aws_ecs_task_definition" "task" {
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
 
   container_definitions = jsonencode([{
-    name      = "proyectobase"
-    image     = "nginx:latest"  # Imagen temporal inicial
+    name      = "lab2"
+    image     = "nginx:latest"
     essential = true
     portMappings = [{
       containerPort = 80
@@ -157,22 +154,17 @@ resource "aws_ecs_task_definition" "task" {
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        "awslogs-group"         = "/ecs/proyectobase"
+        "awslogs-group"         = "/ecs/lab2"
         "awslogs-region"        = "us-east-2"
-        "awslogs-stream-prefix" = "proyectobase"
+        "awslogs-stream-prefix" = "lab2"
       }
     }
   }])
 }
 
-resource "aws_cloudwatch_log_group" "ecs_logs" {
-  name              = "/ecs/proyectobase"
-  retention_in_days = 7
-}
-
 # ECS Service
 resource "aws_ecs_service" "service" {
-  name            = "proyectobase-service"
+  name            = "lab2-service"
   cluster         = aws_ecs_cluster.cluster.id
   task_definition = aws_ecs_task_definition.task.arn
   desired_count   = 1
@@ -186,7 +178,7 @@ resource "aws_ecs_service" "service" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.tg.arn
-    container_name   = "proyectobase"
+    container_name   = "lab2"
     container_port   = 80
   }
 

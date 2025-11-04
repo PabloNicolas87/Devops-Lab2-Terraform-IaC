@@ -7,6 +7,6 @@ variable "region" {
 variable "cluster_name" {
   description = "ECS Cluster name"
   type        = string
-  default     = "proyectobase-cluster"
+  default     = "lab2-cluster"
 }
 
